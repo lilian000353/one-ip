@@ -588,14 +588,14 @@ $("rtcBtn").addEventListener("click",function(){
   var cm=$("connMore");if(cm)cm.addEventListener("click",function(e){e.preventDefault();connShowAll=!connShowAll;cm.textContent=connShowAll?"收起 ›":"查看更多 ›";renderConn()});
 })();
 
-/* speed -- speed.cloudflare.com dark UI: staged multi-connection tests,
-   live throughput charts, idle + loaded latency/jitter, loss estimate,
-   AIM-style quality scores. Endpoints: speed.cloudflare.com/__down|__up|/meta */
+/* speed -- speed.cloudflare.com dark UI. Download/upload run as
+   fixed-duration parallel streams sampled every 200 ms, so the
+   throughput charts animate live; final value = 90th percentile.
+   Idle + loaded latency/jitter, loss estimate, AIM-style scores. */
 $("speedBtn").addEventListener("click",function(){
   var btn=$("speedBtn"),pauseBtn=$("spPause"),stage=$("spStage"),meta=$("spMeta");
   var BASE="https://speed.cloudflare.com";
-  var paused=false,dlBytes=0,dlSamples=[],upSamples=[],idleOk=[],idleFail=0;
-  var loadedD=[],loadedU=[];
+  var paused=false;
   function fmt(v){return v>=100?String(Math.round(v)):v>=10?v.toFixed(1):v.toFixed(2)}
   function set(id,v){$(id).textContent=v}
   function p90(a){if(!a.length)return 0;var s=a.slice().sort(function(x,y){return x-y});return s[Math.min(s.length-1,Math.floor(s.length*0.9))]}
@@ -607,18 +607,16 @@ $("speedBtn").addEventListener("click",function(){
     $(id).innerHTML=s;
   }
   function chart(id,samples,color){
-    var el=$(id);if(!samples.length){el.innerHTML="";return}
-    var max=Math.max.apply(null,samples.concat([p90(samples)*1.15,1])),i,pts=[];
+    var el=$(id);if(!el)return;
+    if(!samples.length)samples=[0,0];
+    var peak=p90(samples),max=Math.max.apply(null,samples.concat([peak*1.15,1])),i,pts=[];
     for(i=0;i<samples.length;i++)pts.push((i/Math.max(1,samples.length-1)*600).toFixed(1)+","+(104-samples[i]/max*96).toFixed(1));
-    var y90=(104-p90(samples)/max*96).toFixed(1);
-    var gid=id+"g";
+    var y90=(104-peak/max*96).toFixed(1),gid=id+"g";
     el.innerHTML="<defs><linearGradient id='"+gid+"' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='"+color+"' stop-opacity='.45'/><stop offset='1' stop-color='"+color+"' stop-opacity='0'/></linearGradient></defs>"
       +"<polygon points='0,110 "+pts.join(" ")+" 600,110' fill='url(#"+gid+")'/>"
       +"<polyline points='"+pts.join(" ")+"' fill='none' stroke='"+color+"' stroke-width='2'/>"
-      +"<line x1='0' y1='"+y90+"' x2='600' y2='"+y90+"' stroke='#8a8f98' stroke-width='1' stroke-dasharray='5 4'/>"
-      +"<text x='4' y='"+Math.max(10,y90-4)+"' fill='#9aa0a6' font-size='10'>90th percentile</text>";
+      +(peak>0?"<line x1='0' y1='"+y90+"' x2='600' y2='"+y90+"' stroke='#8a8f98' stroke-width='1' stroke-dasharray='5 4'/><text x='4' y='"+Math.max(10,y90-4)+"' fill='#9aa0a6' font-size='10'>90th percentile</text>":"");
   }
-  function waitResume(){return new Promise(function(r){(function chk(){if(!paused)r();else setTimeout(chk,200)})()})}
   pauseBtn.hidden=false;pauseBtn.textContent="暂停";
   pauseBtn.onclick=function(){paused=!paused;pauseBtn.textContent=paused?"继续":"暂停";stage.textContent=paused?"已暂停":"继续测速…"};
   btn.disabled=true;btn.textContent="测速中…";
@@ -626,85 +624,111 @@ $("speedBtn").addEventListener("click",function(){
   ["spPingD","spPingU","spJitD","spJitU"].forEach(function(id){set(id,"–")});
   stars("scStream",null);stars("scGame",null);stars("scCall",null);
   meta.textContent="";set("spWhen","");
+  chart("chDown",[],"#f6821f");chart("chUp",[],"#b49ae8");
   fetch(BASE+"/meta",{cache:"no-store"}).then(function(r){return r.json()}).then(function(m){
-    if(m&&m.colo)meta.textContent="测速服务器："+m.colo+(m.city?" · "+m.city:"")+(m.country?" · "+m.country:"");
+    if(!m)return;
+    var colo=m.colo?(typeof m.colo==="object"?(m.colo.iata||m.colo.city||""):String(m.colo)):"";
+    var city=m.city||(m.colo&&typeof m.colo==="object"?m.colo.city:"")||"";
+    if(colo||city)meta.textContent="测速服务器："+colo+(city?" · "+city:"")+(m.country?" · "+m.country:"");
   }).catch(function(){});
   function smallReq(){
     var t=performance.now();
     return fetch(BASE+"/__down?bytes=0",{cache:"no-store"}).then(function(r){return r.text()}).then(function(){return performance.now()-t});
   }
-  function latencyRound(n,arr){
+  var idleOk=[],idleFail=0,loadedD=[],loadedU=[];
+  function latencyRound(n){
     var chain=Promise.resolve();
-    for(var i=0;i<n;i++)(function(){chain=chain.then(function(){return smallReq().then(function(v){arr.push(v)}).catch(function(){idleFail++})})})();
+    for(var i=0;i<n;i++)(function(){chain=chain.then(function(){return smallReq().then(function(v){idleOk.push(v)}).catch(function(){idleFail++})})})();
     return chain;
   }
-  function downStream(bytes){
-    return fetch(BASE+"/__down?bytes="+bytes,{cache:"no-store"}).then(function(r){
-      if(!r.body||!r.body.getReader())return r.arrayBuffer().then(function(b){dlBytes+=b.byteLength;return b.byteLength});
-      var reader=r.body.getReader(),tot=0;
-      function pump(){return reader.read().then(function(x){if(x.done)return tot;tot+=x.value.byteLength;dlBytes+=x.value.byteLength;return pump()})}
-      return pump();
-    });
-  }
-  function downBatch(bytes,n){
-    var ps=[];for(var i=0;i<n;i++)ps.push(downStream(bytes).catch(function(){return 0}));
-    return Promise.all(ps);
-  }
-  function upBatch(bytes,n){
-    var body=new Uint8Array(bytes);for(var i=0;i<bytes;i+=9973)body[i]=i%251;
-    var t=performance.now(),ps=[];
-    for(var j=0;j<n;j++)ps.push(fetch(BASE+"/__up",{method:"POST",body:body,cache:"no-store"}).then(function(r){return r.text()}).catch(function(){return ""}));
-    return Promise.all(ps).then(function(){return bytes*n*8/((performance.now()-t)/1000)/1e6});
-  }
-  function loadedLoop(arr,activeFlag){
+  function loadedLoop(arr,flag){
     (function step(){
-      if(!activeFlag.on)return;
-      smallReq().then(function(v){arr.push(v)}).catch(function(){}).then(function(){if(activeFlag.on)setTimeout(step,700)});
+      if(!flag.on)return;
+      smallReq().then(function(v){arr.push(v)}).catch(function(){}).then(function(){if(flag.on)setTimeout(step,700)});
     })();
   }
+  /* download: 4 parallel long streams, aggregate bytes sampled live */
+  function downloadPhase(ms){
+    return new Promise(function(resolve){
+      var bytes=0,samples=[],ctrl=("AbortController" in window)?new AbortController():null;
+      function one(){
+        var opts={cache:"no-store"};if(ctrl)opts.signal=ctrl.signal;
+        fetch(BASE+"/__down?bytes=50000000",opts).then(function(r){
+          if(!r.body||!r.body.getReader())return r.arrayBuffer().then(function(b){bytes+=b.byteLength});
+          var rd=r.body.getReader();
+          function pump(){return rd.read().then(function(x){if(x.done)return 0;bytes+=x.value.byteLength;return pump()})}
+          return pump();
+        }).catch(function(){}).then(function(){if(ctrl&&!ctrl.signal.aborted)one()});
+      }
+      for(var i=0;i<4;i++)one();
+      chart("chDown",[0,0],"#f6821f");
+      var t0=performance.now(),last=t0,lastB=0;
+      var iv=setInterval(function(){
+        var now=performance.now();
+        if(paused){t0+=now-last;last=now;lastB=bytes;return}
+        var rate=(bytes-lastB)*8/((now-last)/1000)/1e6;
+        samples.push(rate);last=now;lastB=bytes;
+        if(samples.length>2)set("spDown",fmt(p90(samples.slice(1))));
+        chart("chDown",samples,"#f6821f");
+        if(now-t0>=ms){clearInterval(iv);if(ctrl)ctrl.abort();resolve(samples)}
+      },200);
+    });
+  }
+  /* upload: 4 parallel XHR posts, upload progress sampled live */
+  function uploadPhase(ms){
+    return new Promise(function(resolve){
+      var loaded={},samples=[],done=false,key=0;
+      function total(){var t=0;for(var k in loaded)t+=loaded[k];return t}
+      function one(){
+        if(done)return;
+        var id=++key,body=new Uint8Array(1000000);
+        for(var i=0;i<body.length;i+=9973)body[i]=i%251;
+        var xhr=new XMLHttpRequest();
+        xhr.open("POST",BASE+"/__up");
+        xhr.upload.onprogress=function(e){loaded[id]=e.loaded};
+        xhr.onload=xhr.onerror=function(){loaded[id]=1000000;one()};
+        try{xhr.send(body)}catch(e){setTimeout(one,300)}
+      }
+      for(var i=0;i<4;i++)one();
+      chart("chUp",[0,0],"#b49ae8");
+      var t0=performance.now(),last=t0,lastB=0;
+      var iv=setInterval(function(){
+        var now=performance.now();
+        if(paused){t0+=now-last;last=now;lastB=total();return}
+        var rate=(total()-lastB)*8/((now-last)/1000)/1e6;
+        samples.push(rate);last=now;lastB=total();
+        if(samples.length>2)set("spUp",fmt(p90(samples.slice(1))));
+        chart("chUp",samples,"#b49ae8");
+        if(now-t0>=ms){clearInterval(iv);done=true;resolve(samples)}
+      },200);
+    });
+  }
+  var dlSamples=[],upSamples=[];
   stage.textContent="正在测延迟…";
-  latencyRound(20,idleOk).then(function(){
+  latencyRound(20).then(function(){
     var ping=med(idleOk),jit=jitOf(idleOk);
     if(ping!=null)set("spPing",Math.round(ping));
     if(jit!=null)set("spJit",jit.toFixed(1));
-    set("spLoss",(idleFail/(idleOk.length+idleFail||1)*100).toFixed(1));
+    set("spLoss",(idleFail/Math.max(1,idleOk.length+idleFail)*100).toFixed(1));
     stage.textContent="正在测下载…";
     var flag={on:true};loadedLoop(loadedD,flag);
-    var sizes=[100000,500000,1000000,5000000,10000000,25000000],chain=Promise.resolve(),last=performance.now(),lastBytes=0,stop=false;
-    var sampler=setInterval(function(){
-      var now=performance.now(),rate=(dlBytes-lastBytes)*8/((now-last)/1000)/1e6;
-      if(rate>0){dlSamples.push(rate);set("spDown",fmt(p90(dlSamples)));chart("chDown",dlSamples,"#f6821f")}
-      last=now;lastBytes=dlBytes;
-    },250);
-    sizes.forEach(function(s){
-      chain=chain.then(function(){
-        if(stop)return;
-        return waitResume().then(function(){return downBatch(s,4)}).then(function(){if(s>=10000000)stop=true}).catch(function(){stop=true});
-      });
-    });
-    return chain.then(function(){
-      clearInterval(sampler);flag.on=false;
-      if(dlSamples.length)set("spDown",fmt(p90(dlSamples)));
+    return downloadPhase(10000).then(function(s){
+      dlSamples=s;flag.on=false;
+      if(s.length)set("spDown",fmt(p90(s.slice(1))));
       var lp=med(loadedD),lj=jitOf(loadedD);
       if(lp!=null)set("spPingD",Math.round(lp));if(lj!=null)set("spJitD",lj.toFixed(1));
     });
   }).then(function(){
     stage.textContent="正在测上传…";
     var flag={on:true};loadedLoop(loadedU,flag);
-    var sizes=[100000,500000,1000000,5000000],chain=Promise.resolve(),stop=false;
-    sizes.forEach(function(s){
-      chain=chain.then(function(){
-        if(stop)return;
-        return waitResume().then(function(){return upBatch(s,2)}).then(function(mbps){upSamples.push(mbps);set("spUp",fmt(p90(upSamples)));chart("chUp",upSamples,"#b49ae8")}).catch(function(){stop=true});
-      });
-    });
-    return chain.then(function(){
-      flag.on=false;
+    return uploadPhase(8000).then(function(s){
+      upSamples=s;flag.on=false;
+      if(s.length)set("spUp",fmt(p90(s.slice(1))));
       var lp=med(loadedU),lj=jitOf(loadedU);
       if(lp!=null)set("spPingU",Math.round(lp));if(lj!=null)set("spJitU",lj.toFixed(1));
     });
   }).then(function(){
-    var down=p90(dlSamples),up=p90(upSamples),ping=med(idleOk),jit=jitOf(idleOk);
+    var down=p90(dlSamples.slice(1)),up=p90(upSamples.slice(1)),ping=med(idleOk),jit=jitOf(idleOk);
     stars("scStream",down>0?(down>=50?5:down>=25?4:down>=10?3:down>=5?2:1):null);
     stars("scGame",ping!=null?(ping<50&&(jit||0)<10?5:ping<100&&(jit||0)<20?4:ping<150&&(jit||0)<30?3:ping<250?2:1):null);
     var both=Math.min(down,up);
@@ -717,6 +741,7 @@ $("speedBtn").addEventListener("click",function(){
     btn.disabled=false;btn.textContent="重新测速";pauseBtn.hidden=true;
   });
 });
+
 
 
 
