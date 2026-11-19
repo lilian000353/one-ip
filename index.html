@@ -256,7 +256,7 @@ code{font-family:var(--mono);font-size:.92em;background:var(--card2);border:1px 
       <div style="flex:1;min-width:120px"><div style="font-weight:700">Packet Loss</div><div style="font-size:30px;font-weight:800"><span id="spLoss">–</span><span style="font-size:13px;font-weight:600"> %</span></div><div class="sub2">按延迟探测失败比例估算</div></div>
     </div>
     <p class="sub2" id="spStage" style="margin:12px 0 4px">尚未测速</p>
-    <p class="sub2" id="spMeta" style="margin:2px 0 10px"></p>
+    <p class="sub2" id="spMeta" style="margin:2px 0 10px"></p><p class="sub2">测速引擎 v6</p>
     <div style="display:flex;gap:10px;align-items:center">
       <button class="btn" id="speedBtn" type="button">开始测速</button>
       <button class="btn ghost" id="spPause" type="button" hidden>暂停</button>
@@ -651,35 +651,36 @@ $("speedBtn").addEventListener("click",function(){
   }
   function downloadPhase(ms){
     return new Promise(function(resolve){
-      var bytes=0,samples=[],done=false,fell=false;
+      var bytes=0,samples=[],done=false,mode=0;
       var hist=[[performance.now(),0]];
-      var xhrs=[];
-      function xone(){
-        if(done||fell)return;
-        var xhr=new XMLHttpRequest();
-        xhr.open("GET",BASE+"/__down?bytes=10000000&x="+Math.random());
-        xhr.responseType="arraybuffer";
-        var lastLoaded=0;
-        xhr.onprogress=function(e){if(e.loaded>lastLoaded){bytes+=e.loaded-lastLoaded;lastLoaded=e.loaded}};
-        xhr.onload=xhr.onerror=xhr.onabort=function(){if(!done&&!fell)xone()};
-        try{xhr.send()}catch(e){setTimeout(xone,300)}
-        xhrs.push(xhr);
+      var sizes=[1000000,2000000,5000000,10000000];
+      /* mode 0: fetch batches, completion-based (same machinery as
+         the upload phase, which works in the user's browser) */
+      function fworker(step){
+        if(done||mode!==0)return;
+        var size=sizes[Math.min(step,sizes.length-1)];
+        fetch(BASE+"/__down?bytes="+size+"&x="+Math.random(),{cache:"no-store"}).then(function(r){return r.arrayBuffer()}).then(function(b){bytes+=b.byteLength}).catch(function(){}).then(function(){fworker(step+1)});
       }
-      for(var i=0;i<4;i++)xone();
-      /* watchdog: if XHR progress reports nothing in this browser,
-         fall back to timed fetch batches (completion-based) */
+      for(var w=0;w<4;w++)fworker(0);
+      /* mode 1 (fallback): script resource loads -- a different
+         transport class; the file is fully downloaded before the
+         load/error event fires, so completion timing is the rate */
+      var resEls=[];
+      function rworker(step){
+        if(done||mode!==1)return;
+        var size=sizes[Math.min(step,sizes.length-1)];
+        var sc=document.createElement("script");
+        sc.src=BASE+"/__down?bytes="+size+"&x="+Math.random();
+        var fin=false;
+        function end(){if(fin)return;fin=true;bytes+=size;try{sc.remove()}catch(e){}rworker(step+1)}
+        sc.onload=end;sc.onerror=end;
+        document.head.appendChild(sc);resEls.push(sc);
+      }
       setTimeout(function(){
         if(done||bytes>0)return;
-        fell=true;
-        xhrs.forEach(function(x){try{x.abort()}catch(e){}});
-        var sizes=[500000,1000000,2000000,5000000];
-        function worker(step){
-          if(done)return;
-          var size=sizes[Math.min(step,sizes.length-1)];
-          fetch(BASE+"/__down?bytes="+size,{cache:"no-store"}).then(function(r){return r.arrayBuffer()}).then(function(b){bytes+=b.byteLength}).catch(function(){}).then(function(){worker(step+1)});
-        }
-        for(var w=0;w<4;w++)worker(0);
-      },2500);
+        mode=1;
+        for(var w=0;w<4;w++)rworker(0);
+      },3000);
       chart("chDown",[0,0],"#f6821f",ms/1000);
       var t0=performance.now();
       var iv=setInterval(function(){
@@ -690,9 +691,9 @@ $("speedBtn").addEventListener("click",function(){
         var win=(now-hist[0][0])/1000;
         var rate=win>=0.4?(bytes-hist[0][1])*8/win/1e6:(samples.length?samples[samples.length-1]:0);
         samples.push(rate);
-        if(samples.length>2)set("spDown",fmt(p90(samples.slice(1))));
+        if(bytes>0&&samples.length>2)set("spDown",fmt(p90(samples.slice(1))));
         chart("chDown",samples,"#f6821f",ms/1000);
-        if(now-t0>=ms){clearInterval(iv);done=true;xhrs.forEach(function(x){try{x.abort()}catch(e){}});resolve(samples)}
+        if(now-t0>=ms){clearInterval(iv);done=true;resEls.forEach(function(s){try{s.remove()}catch(e){}});resolve(samples)}
       },200);
     });
   }
