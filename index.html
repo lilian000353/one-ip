@@ -606,14 +606,16 @@ $("speedBtn").addEventListener("click",function(){
     var s="";for(var i=0;i<5;i++)s+="<i class='star"+(i<n?"":" off")+"'>★</i>";
     $(id).innerHTML=s;
   }
-  function chart(id,samples,color){
+  function chart(id,samples,color,durSec){
     var el=$(id);if(!el)return;
     if(!samples.length)samples=[0,0];
     var peak=p90(samples),max=Math.max.apply(null,samples.concat([peak*1.15,1])),i,pts=[];
-    for(i=0;i<samples.length;i++)pts.push((i/Math.max(1,samples.length-1)*600).toFixed(1)+","+(104-samples[i]/max*96).toFixed(1));
+    var span=durSec?Math.max(samples.length-1,Math.round(durSec*5)):samples.length-1;
+    for(i=0;i<samples.length;i++)pts.push((i/Math.max(1,span)*600).toFixed(1)+","+(104-samples[i]/max*96).toFixed(1));
+    var lastX=pts[pts.length-1].split(",")[0];
     var y90=(104-peak/max*96).toFixed(1),gid=id+"g";
     el.innerHTML="<defs><linearGradient id='"+gid+"' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='"+color+"' stop-opacity='.45'/><stop offset='1' stop-color='"+color+"' stop-opacity='0'/></linearGradient></defs>"
-      +"<polygon points='0,110 "+pts.join(" ")+" 600,110' fill='url(#"+gid+")'/>"
+      +"<polygon points='0,110 "+pts.join(" ")+" "+lastX+",110' fill='url(#"+gid+")'/>"
       +"<polyline points='"+pts.join(" ")+"' fill='none' stroke='"+color+"' stroke-width='2'/>"
       +(peak>0?"<line x1='0' y1='"+y90+"' x2='600' y2='"+y90+"' stroke='#8a8f98' stroke-width='1' stroke-dasharray='5 4'/><text x='4' y='"+Math.max(10,y90-4)+"' fill='#9aa0a6' font-size='10'>90th percentile</text>":"");
   }
@@ -647,13 +649,13 @@ $("speedBtn").addEventListener("click",function(){
       smallReq().then(function(v){arr.push(v)}).catch(function(){}).then(function(){if(flag.on)setTimeout(step,700)});
     })();
   }
-  /* download: 4 parallel long streams, aggregate bytes sampled live */
   function downloadPhase(ms){
     return new Promise(function(resolve){
       var bytes=0,samples=[],ctrl=("AbortController" in window)?new AbortController():null;
+      var hist=[[performance.now(),0]];
       function one(){
         var opts={cache:"no-store"};if(ctrl)opts.signal=ctrl.signal;
-        fetch(BASE+"/__down?bytes=50000000",opts).then(function(r){
+        fetch(BASE+"/__down?bytes=10000000",opts).then(function(r){
           if(!r.body||!r.body.getReader())return r.arrayBuffer().then(function(b){bytes+=b.byteLength});
           var rd=r.body.getReader();
           function pump(){return rd.read().then(function(x){if(x.done)return 0;bytes+=x.value.byteLength;return pump()})}
@@ -661,15 +663,18 @@ $("speedBtn").addEventListener("click",function(){
         }).catch(function(){}).then(function(){if(ctrl&&!ctrl.signal.aborted)one()});
       }
       for(var i=0;i<4;i++)one();
-      chart("chDown",[0,0],"#f6821f");
-      var t0=performance.now(),last=t0,lastB=0;
+      chart("chDown",[0,0],"#f6821f",ms/1000);
+      var t0=performance.now();
       var iv=setInterval(function(){
         var now=performance.now();
-        if(paused){t0+=now-last;last=now;lastB=bytes;return}
-        var rate=(bytes-lastB)*8/((now-last)/1000)/1e6;
-        samples.push(rate);last=now;lastB=bytes;
+        if(paused){t0+=200;hist=[[now,bytes]];return}
+        hist.push([now,bytes]);
+        while(hist.length>2&&now-hist[0][0]>1600)hist.shift();
+        var win=(now-hist[0][0])/1000;
+        var rate=win>=0.4?(bytes-hist[0][1])*8/win/1e6:(samples.length?samples[samples.length-1]:0);
+        samples.push(rate);
         if(samples.length>2)set("spDown",fmt(p90(samples.slice(1))));
-        chart("chDown",samples,"#f6821f");
+        chart("chDown",samples,"#f6821f",ms/1000);
         if(now-t0>=ms){clearInterval(iv);if(ctrl)ctrl.abort();resolve(samples)}
       },200);
     });
@@ -682,6 +687,7 @@ $("speedBtn").addEventListener("click",function(){
   function uploadPhase(ms){
     return new Promise(function(resolve){
       var bytes=0,samples=[],done=false;
+      var hist=[[performance.now(),0]];
       var sizes=[100000,250000,500000,1000000,2000000,4000000];
       function worker(step){
         if(done)return;
@@ -690,15 +696,18 @@ $("speedBtn").addEventListener("click",function(){
         fetch(BASE+"/__up",{method:"POST",body:body,cache:"no-store"}).then(function(r){return r.text()}).then(function(){bytes+=size}).catch(function(){}).then(function(){worker(step+1)});
       }
       for(var w=0;w<4;w++)worker(0);
-      chart("chUp",[0,0],"#b49ae8");
-      var t0=performance.now(),last=t0,lastB=0;
+      chart("chUp",[0,0],"#b49ae8",ms/1000);
+      var t0=performance.now();
       var iv=setInterval(function(){
         var now=performance.now();
-        if(paused){t0+=now-last;last=now;lastB=bytes;return}
-        var rate=(bytes-lastB)*8/((now-last)/1000)/1e6;
-        samples.push(rate);last=now;lastB=bytes;
+        if(paused){t0+=200;hist=[[now,bytes]];return}
+        hist.push([now,bytes]);
+        while(hist.length>2&&now-hist[0][0]>1600)hist.shift();
+        var win=(now-hist[0][0])/1000;
+        var rate=win>=0.4?(bytes-hist[0][1])*8/win/1e6:(samples.length?samples[samples.length-1]:0);
+        samples.push(rate);
         if(bytes>0&&samples.length>2)set("spUp",fmt(p90(samples.slice(1))));
-        chart("chUp",samples,"#b49ae8");
+        chart("chUp",samples,"#b49ae8",ms/1000);
         if(now-t0>=ms){clearInterval(iv);done=true;if(bytes===0)upFailed=true;resolve(samples)}
       },200);
     });
