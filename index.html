@@ -674,32 +674,32 @@ $("speedBtn").addEventListener("click",function(){
       },200);
     });
   }
-  /* upload: 4 parallel XHR posts, upload progress sampled live */
+  /* upload: fetch POST batches of growing size (100KB -> 4MB),
+     4 parallel; completed bytes sampled every 200 ms like download.
+     (XHR upload progress never fires in some WebViews, which left
+     the previous version with no upload samples at all.) */
+  var upFailed=false;
   function uploadPhase(ms){
     return new Promise(function(resolve){
-      var loaded={},samples=[],done=false,key=0;
-      function total(){var t=0;for(var k in loaded)t+=loaded[k];return t}
-      function one(){
+      var bytes=0,samples=[],done=false;
+      var sizes=[100000,250000,500000,1000000,2000000,4000000];
+      function worker(step){
         if(done)return;
-        var id=++key,body=new Uint8Array(1000000);
-        for(var i=0;i<body.length;i+=9973)body[i]=i%251;
-        var xhr=new XMLHttpRequest();
-        xhr.open("POST",BASE+"/__up");
-        xhr.upload.onprogress=function(e){loaded[id]=e.loaded};
-        xhr.onload=xhr.onerror=function(){loaded[id]=1000000;one()};
-        try{xhr.send(body)}catch(e){setTimeout(one,300)}
+        var size=sizes[Math.min(step,sizes.length-1)],body=new Uint8Array(size);
+        for(var i=0;i<size;i+=65537)body[i]=i%251;
+        fetch(BASE+"/__up",{method:"POST",body:body,cache:"no-store"}).then(function(r){return r.text()}).then(function(){bytes+=size}).catch(function(){}).then(function(){worker(step+1)});
       }
-      for(var i=0;i<4;i++)one();
+      for(var w=0;w<4;w++)worker(0);
       chart("chUp",[0,0],"#b49ae8");
       var t0=performance.now(),last=t0,lastB=0;
       var iv=setInterval(function(){
         var now=performance.now();
-        if(paused){t0+=now-last;last=now;lastB=total();return}
-        var rate=(total()-lastB)*8/((now-last)/1000)/1e6;
-        samples.push(rate);last=now;lastB=total();
-        if(samples.length>2)set("spUp",fmt(p90(samples.slice(1))));
+        if(paused){t0+=now-last;last=now;lastB=bytes;return}
+        var rate=(bytes-lastB)*8/((now-last)/1000)/1e6;
+        samples.push(rate);last=now;lastB=bytes;
+        if(bytes>0&&samples.length>2)set("spUp",fmt(p90(samples.slice(1))));
         chart("chUp",samples,"#b49ae8");
-        if(now-t0>=ms){clearInterval(iv);done=true;resolve(samples)}
+        if(now-t0>=ms){clearInterval(iv);done=true;if(bytes===0)upFailed=true;resolve(samples)}
       },200);
     });
   }
@@ -733,7 +733,7 @@ $("speedBtn").addEventListener("click",function(){
     stars("scGame",ping!=null?(ping<50&&(jit||0)<10?5:ping<100&&(jit||0)<20?4:ping<150&&(jit||0)<30?3:ping<250?2:1):null);
     var both=Math.min(down,up);
     stars("scCall",both>0?(both>=10&&(jit||0)<20?5:both>=5&&(jit||0)<30?4:both>=2.5?3:both>=1?2:1):null);
-    stage.textContent="测速完成";
+    stage.textContent=upFailed?"测速完成（上传未测出：端点无响应，可能被代理拦截）":"测速完成";
     set("spWhen","测于 "+new Date().toLocaleTimeString());
   }).catch(function(){
     stage.textContent="测速失败，可能被当前网络或代理拦截，稍后再试。";
