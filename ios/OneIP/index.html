@@ -95,6 +95,30 @@ footer{margin-top:34px;text-align:center;color:var(--faint);font-size:12.5px;lin
 .install-steps{counter-reset:st;display:flex;flex-direction:column;gap:10px;font-size:14px;line-height:1.65}
 .install-steps div{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
 code{font-family:var(--mono);font-size:.92em;background:var(--card2);border:1px solid var(--line);border-radius:6px;padding:1px 6px;word-break:break-all}
+
+/* dark panels: AI overview / connectivity / CF-style speed test */
+.dk{background:#141518;color:#f2f3f5;border-radius:16px;padding:18px;margin:0}
+.dk h3{margin:0 0 12px;font-size:17px;color:#fff}
+.dk .sub2{color:#9aa0a6;font-size:12px}
+.dkgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:760px){.dkgrid{grid-template-columns:1fr}}
+.airow{display:flex;align-items:center;gap:10px;padding:7px 2px}
+.airow img{width:22px;height:22px;border-radius:5px;background:#fff}
+.airow .nm{flex:1;font-weight:600}
+.msval{font-weight:700;font-variant-numeric:tabular-nums}
+.ms-g{color:#4ade80}.ms-y{color:#fbbf24}.ms-r{color:#f87171}
+.badge{background:#22301f;color:#4ade80;border-radius:7px;padding:2px 8px;font-weight:700;font-size:13px;white-space:nowrap}
+.badge.y{background:#332a12;color:#fbbf24}.badge.r{background:#3a1d1d;color:#f87171}
+.dots{display:flex;gap:4px;margin-top:5px}
+.dots i{width:7px;height:7px;border-radius:50%;background:#3a3b40;display:block}
+.dots i.g{background:#4ade80}.dots i.y{background:#fbbf24}.dots i.r{background:#f87171}
+.connitem{background:#1b1c20;border-radius:12px;padding:10px 12px}
+.connitem .hd{display:flex;align-items:center;gap:9px}
+.connitem .hd .nm{flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.connitem img{width:20px;height:20px;border-radius:5px;background:#fff}
+.cfchart{width:100%;height:110px;display:block}
+.star{color:#f6821f;font-style:normal}
+.star.off{color:#4a4b50}
 </style>
 </head>
 <body>
@@ -155,6 +179,16 @@ code{font-family:var(--mono);font-size:.92em;background:var(--card2);border:1px 
     <p class="sub" style="margin-top:10px">判定方法与原版一致的简化逻辑：各站点看到的出口与你的直连出口相同记为 Direct，不同或经 CDN 边缘转发记为 Proxy。不同出口也可能来自多线 NAT，仅作提示。</p>
   </section>
 
+  <h2 class="sec">AI 访问概览 · 网络连通性</h2>
+  <div class="dkgrid">
+    <section class="dk"><h3>AI 访问概览</h3><div id="aiList"><p class="sub2">探测中…</p></div></section>
+    <section class="dk">
+      <h3 style="display:flex;align-items:center">网络连通性 <span style="flex:1"></span><label class="sub2" style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="sortToggle" style="accent-color:#4ade80"> 按速度排序</label></h3>
+      <div id="connList" style="display:grid;grid-template-columns:1fr 1fr;gap:10px"></div>
+      <p style="margin:10px 0 2px"><a href="#" id="connMore" style="color:#9aa0a6;font-size:13px;text-decoration:none">查看更多 ›</a></p>
+    </section>
+  </div>
+
   <h2 class="sec">服务状态 <span class="more"><a href="https://status.openai.com" target="_blank" rel="noopener">全部官方状态页 ›</a></span></h2>
   <section class="card">
     <div class="grid2" style="gap:0 28px" id="svcList"></div>
@@ -208,17 +242,34 @@ code{font-family:var(--mono);font-size:.92em;background:var(--card2);border:1px 
   </section>
 
   <h2 class="sec" id="tool-speed">网速测试（Cloudflare）</h2>
-  <section class="card">
-    <p class="sub" style="margin-top:0">按 speed.cloudflare.com 的方法测速：延迟取多次小请求的中位数，下载/上传用多连接分阶段递增的数据量测吞吐。结果受当前网络与代理影响。</p>
-    <div style="display:flex;gap:28px;flex-wrap:wrap;margin:14px 0 4px">
-      <div><div class="sub" style="margin:0">下载</div><div style="font-size:32px;font-weight:800;line-height:1.15"><span id="spDown">–</span><span style="font-size:14px;font-weight:600"> Mbps</span></div></div>
-      <div><div class="sub" style="margin:0">上传</div><div style="font-size:32px;font-weight:800;line-height:1.15"><span id="spUp">–</span><span style="font-size:14px;font-weight:600"> Mbps</span></div></div>
-      <div><div class="sub" style="margin:0">延迟</div><div style="font-size:32px;font-weight:800;line-height:1.15"><span id="spPing">–</span><span style="font-size:14px;font-weight:600"> ms</span></div></div>
-      <div><div class="sub" style="margin:0">抖动</div><div style="font-size:32px;font-weight:800;line-height:1.15"><span id="spJit">–</span><span style="font-size:14px;font-weight:600"> ms</span></div></div>
+  <section class="dk" id="cfSpeed">
+    <div style="display:flex;align-items:baseline;gap:10px"><span style="font-size:20px;font-weight:800;color:#fff">Speed Test</span><span style="flex:1"></span><span class="sub2" id="spWhen"></span></div>
+    <div style="margin-top:16px"><div style="font-weight:700">Download</div>
+      <div style="font-size:44px;font-weight:800;line-height:1.1"><span id="spDown">–</span><span style="font-size:16px;font-weight:600"> Mbps</span></div>
+      <svg class="cfchart" id="chDown" viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+    <div style="margin-top:6px"><div style="font-weight:700">Upload</div>
+      <div style="font-size:44px;font-weight:800;line-height:1.1"><span id="spUp">–</span><span style="font-size:16px;font-weight:600"> Mbps</span></div>
+      <svg class="cfchart" id="chUp" viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:10px">
+      <div style="flex:1;min-width:140px"><div style="font-weight:700">Latency</div><div style="font-size:30px;font-weight:800"><span id="spPing">–</span><span style="font-size:13px;font-weight:600"> ms</span></div><div class="sub2"><span style="color:#f6821f">↓</span> <span id="spPingD">–</span> ms · <span style="color:#b49ae8">↑</span> <span id="spPingU">–</span> ms</div></div>
+      <div style="flex:1;min-width:140px"><div style="font-weight:700">Jitter</div><div style="font-size:30px;font-weight:800"><span id="spJit">–</span><span style="font-size:13px;font-weight:600"> ms</span></div><div class="sub2"><span style="color:#f6821f">↓</span> <span id="spJitD">–</span> ms · <span style="color:#b49ae8">↑</span> <span id="spJitU">–</span> ms</div></div>
+      <div style="flex:1;min-width:120px"><div style="font-weight:700">Packet Loss</div><div style="font-size:30px;font-weight:800"><span id="spLoss">–</span><span style="font-size:13px;font-weight:600"> %</span></div><div class="sub2">按延迟探测失败比例估算</div></div>
     </div>
-    <p class="sub" id="spStage" style="margin:8px 0 2px">尚未测速</p>
-    <p class="sub" id="spMeta" style="margin:2px 0 10px"></p>
-    <button class="btn" id="speedBtn" type="button">开始测速</button>
+    <p class="sub2" id="spStage" style="margin:12px 0 4px">尚未测速</p>
+    <p class="sub2" id="spMeta" style="margin:2px 0 10px"></p>
+    <div style="display:flex;gap:10px;align-items:center">
+      <button class="btn" id="speedBtn" type="button">开始测速</button>
+      <button class="btn ghost" id="spPause" type="button" hidden>暂停</button>
+    </div>
+    <div style="border-top:1px solid #2a2b30;margin-top:16px;padding-top:12px">
+      <div style="font-weight:800;font-size:16px;color:#fff">Network Quality Score</div>
+      <div style="display:flex;gap:22px;flex-wrap:wrap;margin-top:10px">
+        <div><div style="font-weight:600">Streaming</div><div id="scStream" style="font-size:17px;letter-spacing:2px"></div></div>
+        <div><div style="font-weight:600">Gaming</div><div id="scGame" style="font-size:17px;letter-spacing:2px"></div></div>
+        <div><div style="font-weight:600">Video Calls</div><div id="scCall" style="font-size:17px;letter-spacing:2px"></div></div>
+      </div>
+      <p class="sub2" style="margin-top:8px">评分按 Cloudflare AIM 的思路从实测吞吐、延迟、抖动与丢包推导：流媒体主要看下载带宽，游戏主要看延迟与抖动，视频通话看上下行与抖动。</p>
+    </div>
   </section>
 
   <h2 class="sec" id="tool-whois">WHOIS / RDAP</h2>
@@ -481,75 +532,192 @@ $("rtcBtn").addEventListener("click",function(){
   setTimeout(finish,5000);
 });
 
-/* speed -- modelled on speed.cloudflare.com: staged multi-connection
-   download/upload against speed.cloudflare.com/__down and /__up,
-   latency = median of small requests, jitter = mean successive diff. */
+/* AI overview + connectivity: screenshot-style dark panels.
+   Latency probe = favicon image load, falling back to a no-cors fetch;
+   first success wins, 6s timeout counts as unreachable. */
+(function(){
+  var AI=[["ChatGPT","chatgpt.com"],["Claude","claude.ai"],["Gemini","gemini.google.com"],["DeepSeek","www.deepseek.com"],["Grok","grok.com"],["Perplexity","www.perplexity.ai"],["通义千问","tongyi.aliyun.com"],["Kimi","www.kimi.com"]];
+  var CONN=[["字节跳动","www.bytedance.com"],["淘宝","www.taobao.com"],["微信","weixin.qq.com"],["GitHub","github.com"],["Cloudflare","www.cloudflare.com"],["YouTube","www.youtube.com"],["Google","www.google.com"],["哔哩哔哩","www.bilibili.com"],["百度","www.baidu.com"],["Discord","discord.com"],["TikTok","www.tiktok.com"],["Netflix","www.netflix.com"]];
+  function fav(d){return "https://www.google.com/s2/favicons?domain="+d+"&sz=64"}
+  function probe(domain){
+    return new Promise(function(res){
+      var done=false,t0=performance.now();
+      function ok(){if(!done){done=true;res(Math.max(1,Math.round(performance.now()-t0)))}}
+      function fail(){if(!done){done=true;res(null)}}
+      var img=new Image();
+      img.onload=ok;
+      img.onerror=function(){fetch("https://"+domain+"/",{mode:"no-cors",cache:"no-store"}).then(ok).catch(fail)};
+      img.src="https://"+domain+"/favicon.ico?probe="+Date.now();
+      setTimeout(fail,6000);
+    });
+  }
+  function msCls(ms){return ms==null?"ms-r":ms<300?"ms-g":ms<700?"ms-y":"ms-r"}
+  function dotsHtml(ms){
+    var i,s="";
+    if(ms==null){for(i=0;i<8;i++)s+="<i class='"+(i<2?"r":"")+"'></i>";return s}
+    var n=ms<=30?8:ms<=80?7:ms<=150?6:ms<=250?5:ms<=400?4:ms<=700?3:2;
+    var c=ms<=150?"g":ms<=400?"y":"r";
+    for(i=0;i<8;i++)s+="<i class='"+(i<n?c:"")+"'></i>";
+    return s;
+  }
+  var aiRes={},connRes={},connShowAll=false;
+  function renderAI(){
+    $("aiList").innerHTML=AI.map(function(x){
+      var ms=aiRes[x[1]];
+      var right=ms===undefined?"<span class='msval' style='color:#9aa0a6'>…</span>":ms==null?"<span class='msval ms-r'>未连通</span>":"<span class='msval "+msCls(ms)+"'>"+ms+" ms</span>";
+      return "<div class='airow'><img alt='' src='"+fav(x[1])+"'><span class='nm'>"+x[0]+"</span>"+right+"</div>";
+    }).join("");
+  }
+  function renderConn(){
+    var list=CONN.slice();
+    if($("sortToggle")&&$("sortToggle").checked)list.sort(function(a,b){
+      var x=connRes[a[1]],y=connRes[b[1]];
+      if(x==null)return 1;if(y==null)return -1;if(x===undefined)return 1;if(y===undefined)return -1;return x-y;
+    });
+    if(!connShowAll)list=list.slice(0,6);
+    $("connList").innerHTML=list.map(function(x){
+      var ms=connRes[x[1]];
+      var badge=ms===undefined?"<span class='badge' style='background:#2a2b30;color:#9aa0a6'>…</span>":ms==null?"<span class='badge r'>未连通</span>":"<span class='badge "+(ms<300?"":ms<700?"y":"r")+"'>"+ms+"ms</span>";
+      return "<div class='connitem'><div class='hd'><img alt='' src='"+fav(x[1])+"'><span class='nm'>"+x[0]+"</span>"+badge+"</div><div class='dots'>"+dotsHtml(ms===undefined?null:ms)+"</div></div>";
+    }).join("");
+  }
+  renderAI();renderConn();
+  AI.forEach(function(x){probe(x[1]).then(function(ms){aiRes[x[1]]=ms;renderAI()})});
+  CONN.forEach(function(x){probe(x[1]).then(function(ms){connRes[x[1]]=ms;renderConn()})});
+  var st=$("sortToggle");if(st)st.addEventListener("change",renderConn);
+  var cm=$("connMore");if(cm)cm.addEventListener("click",function(e){e.preventDefault();connShowAll=!connShowAll;cm.textContent=connShowAll?"收起 ›":"查看更多 ›";renderConn()});
+})();
+
+/* speed -- speed.cloudflare.com dark UI: staged multi-connection tests,
+   live throughput charts, idle + loaded latency/jitter, loss estimate,
+   AIM-style quality scores. Endpoints: speed.cloudflare.com/__down|__up|/meta */
 $("speedBtn").addEventListener("click",function(){
-  var btn=$("speedBtn"),stage=$("spStage"),meta=$("spMeta");
+  var btn=$("speedBtn"),pauseBtn=$("spPause"),stage=$("spStage"),meta=$("spMeta");
   var BASE="https://speed.cloudflare.com";
+  var paused=false,dlBytes=0,dlSamples=[],upSamples=[],idleOk=[],idleFail=0;
+  var loadedD=[],loadedU=[];
   function fmt(v){return v>=100?String(Math.round(v)):v>=10?v.toFixed(1):v.toFixed(2)}
   function set(id,v){$(id).textContent=v}
+  function p90(a){if(!a.length)return 0;var s=a.slice().sort(function(x,y){return x-y});return s[Math.min(s.length-1,Math.floor(s.length*0.9))]}
+  function med(a){if(!a.length)return null;var s=a.slice().sort(function(x,y){return x-y});return s[Math.floor(s.length/2)]}
+  function jitOf(a){if(a.length<2)return null;var t=0;for(var i=1;i<a.length;i++)t+=Math.abs(a[i]-a[i-1]);return t/(a.length-1)}
+  function stars(id,n){
+    if(n==null){$(id).innerHTML="<span class='sub2'>数据不足</span>";return}
+    var s="";for(var i=0;i<5;i++)s+="<i class='star"+(i<n?"":" off")+"'>★</i>";
+    $(id).innerHTML=s;
+  }
+  function chart(id,samples,color){
+    var el=$(id);if(!samples.length){el.innerHTML="";return}
+    var max=Math.max.apply(null,samples.concat([p90(samples)*1.15,1])),i,pts=[];
+    for(i=0;i<samples.length;i++)pts.push((i/Math.max(1,samples.length-1)*600).toFixed(1)+","+(104-samples[i]/max*96).toFixed(1));
+    var y90=(104-p90(samples)/max*96).toFixed(1);
+    var gid=id+"g";
+    el.innerHTML="<defs><linearGradient id='"+gid+"' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='"+color+"' stop-opacity='.45'/><stop offset='1' stop-color='"+color+"' stop-opacity='0'/></linearGradient></defs>"
+      +"<polygon points='0,110 "+pts.join(" ")+" 600,110' fill='url(#"+gid+")'/>"
+      +"<polyline points='"+pts.join(" ")+"' fill='none' stroke='"+color+"' stroke-width='2'/>"
+      +"<line x1='0' y1='"+y90+"' x2='600' y2='"+y90+"' stroke='#8a8f98' stroke-width='1' stroke-dasharray='5 4'/>"
+      +"<text x='4' y='"+Math.max(10,y90-4)+"' fill='#9aa0a6' font-size='10'>90th percentile</text>";
+  }
+  function waitResume(){return new Promise(function(r){(function chk(){if(!paused)r();else setTimeout(chk,200)})()})}
+  pauseBtn.hidden=false;pauseBtn.textContent="暂停";
+  pauseBtn.onclick=function(){paused=!paused;pauseBtn.textContent=paused?"继续":"暂停";stage.textContent=paused?"已暂停":"继续测速…"};
   btn.disabled=true;btn.textContent="测速中…";
-  set("spDown","–");set("spUp","–");set("spPing","–");set("spJit","–");meta.textContent="";
-  var stopDown=false;
-  function downBatch(bytes,n){
-    var t=performance.now(),ps=[];
-    for(var i=0;i<n;i++)ps.push(fetch(BASE+"/__down?bytes="+bytes,{cache:"no-store"}).then(function(r){return r.arrayBuffer()}));
-    return Promise.all(ps).then(function(bufs){
-      var tot=0;bufs.forEach(function(b){tot+=b.byteLength});
-      return {mbps:tot*8/((performance.now()-t)/1000)/1e6,sec:(performance.now()-t)/1000};
+  ["spDown","spUp","spPing","spJit","spLoss"].forEach(function(id){set(id,"–")});
+  ["spPingD","spPingU","spJitD","spJitU"].forEach(function(id){set(id,"–")});
+  stars("scStream",null);stars("scGame",null);stars("scCall",null);
+  meta.textContent="";set("spWhen","");
+  fetch(BASE+"/meta",{cache:"no-store"}).then(function(r){return r.json()}).then(function(m){
+    if(m&&m.colo)meta.textContent="测速服务器："+m.colo+(m.city?" · "+m.city:"")+(m.country?" · "+m.country:"");
+  }).catch(function(){});
+  function smallReq(){
+    var t=performance.now();
+    return fetch(BASE+"/__down?bytes=0",{cache:"no-store"}).then(function(r){return r.text()}).then(function(){return performance.now()-t});
+  }
+  function latencyRound(n,arr){
+    var chain=Promise.resolve();
+    for(var i=0;i<n;i++)(function(){chain=chain.then(function(){return smallReq().then(function(v){arr.push(v)}).catch(function(){idleFail++})})})();
+    return chain;
+  }
+  function downStream(bytes){
+    return fetch(BASE+"/__down?bytes="+bytes,{cache:"no-store"}).then(function(r){
+      if(!r.body||!r.body.getReader())return r.arrayBuffer().then(function(b){dlBytes+=b.byteLength;return b.byteLength});
+      var reader=r.body.getReader(),tot=0;
+      function pump(){return reader.read().then(function(x){if(x.done)return tot;tot+=x.value.byteLength;dlBytes+=x.value.byteLength;return pump()})}
+      return pump();
     });
+  }
+  function downBatch(bytes,n){
+    var ps=[];for(var i=0;i<n;i++)ps.push(downStream(bytes).catch(function(){return 0}));
+    return Promise.all(ps);
   }
   function upBatch(bytes,n){
     var body=new Uint8Array(bytes);for(var i=0;i<bytes;i+=9973)body[i]=i%251;
     var t=performance.now(),ps=[];
-    for(var j=0;j<n;j++)ps.push(fetch(BASE+"/__up",{method:"POST",body:body,cache:"no-store"}).then(function(r){return r.text()}));
+    for(var j=0;j<n;j++)ps.push(fetch(BASE+"/__up",{method:"POST",body:body,cache:"no-store"}).then(function(r){return r.text()}).catch(function(){return ""}));
     return Promise.all(ps).then(function(){return bytes*n*8/((performance.now()-t)/1000)/1e6});
   }
-  function latency(){
-    var samples=[],chain=Promise.resolve();
-    function once(){var t=performance.now();return fetch(BASE+"/__down?bytes=0",{cache:"no-store"}).then(function(r){return r.text()}).then(function(){samples.push(performance.now()-t)})}
-    for(var i=0;i<20;i++)chain=chain.then(once);
-    return chain.then(function(){
-      samples.sort(function(a,b){return a-b});
-      var med=samples[Math.floor(samples.length/2)],jit=0;
-      for(var i=1;i<samples.length;i++)jit+=Math.abs(samples[i]-samples[i-1]);
-      return {ping:med,jit:samples.length>1?jit/(samples.length-1):0};
-    });
+  function loadedLoop(arr,activeFlag){
+    (function step(){
+      if(!activeFlag.on)return;
+      smallReq().then(function(v){arr.push(v)}).catch(function(){}).then(function(){if(activeFlag.on)setTimeout(step,700)});
+    })();
   }
   stage.textContent="正在测延迟…";
-  fetch(BASE+"/meta",{cache:"no-store"}).then(function(r){return r.json()}).then(function(m){
-    if(m&&m.colo)meta.textContent="测速服务器："+m.colo+(m.city?" · "+m.city:"")+(m.country?" · "+m.country:"");
-  }).catch(function(){});
-  latency().then(function(l){
-    set("spPing",Math.round(l.ping));set("spJit",l.jit.toFixed(1));
+  latencyRound(20,idleOk).then(function(){
+    var ping=med(idleOk),jit=jitOf(idleOk);
+    if(ping!=null)set("spPing",Math.round(ping));
+    if(jit!=null)set("spJit",jit.toFixed(1));
+    set("spLoss",(idleFail/(idleOk.length+idleFail||1)*100).toFixed(1));
     stage.textContent="正在测下载…";
-    var sizes=[100000,500000,1000000,5000000,10000000,25000000],chain=Promise.resolve();
+    var flag={on:true};loadedLoop(loadedD,flag);
+    var sizes=[100000,500000,1000000,5000000,10000000,25000000],chain=Promise.resolve(),last=performance.now(),lastBytes=0,stop=false;
+    var sampler=setInterval(function(){
+      var now=performance.now(),rate=(dlBytes-lastBytes)*8/((now-last)/1000)/1e6;
+      if(rate>0){dlSamples.push(rate);set("spDown",fmt(p90(dlSamples)));chart("chDown",dlSamples,"#f6821f")}
+      last=now;lastBytes=dlBytes;
+    },250);
     sizes.forEach(function(s){
       chain=chain.then(function(){
-        if(stopDown)return;
-        return downBatch(s,4).then(function(r){set("spDown",fmt(r.mbps));if(r.sec>4)stopDown=true;}).catch(function(){stopDown=true});
+        if(stop)return;
+        return waitResume().then(function(){return downBatch(s,4)}).then(function(){if(s>=10000000)stop=true}).catch(function(){stop=true});
       });
     });
-    return chain;
+    return chain.then(function(){
+      clearInterval(sampler);flag.on=false;
+      if(dlSamples.length)set("spDown",fmt(p90(dlSamples)));
+      var lp=med(loadedD),lj=jitOf(loadedD);
+      if(lp!=null)set("spPingD",Math.round(lp));if(lj!=null)set("spJitD",lj.toFixed(1));
+    });
   }).then(function(){
     stage.textContent="正在测上传…";
+    var flag={on:true};loadedLoop(loadedU,flag);
     var sizes=[100000,500000,1000000,5000000],chain=Promise.resolve(),stop=false;
     sizes.forEach(function(s){
       chain=chain.then(function(){
         if(stop)return;
-        return upBatch(s,2).then(function(mbps){set("spUp",fmt(mbps));}).catch(function(){stop=true});
+        return waitResume().then(function(){return upBatch(s,2)}).then(function(mbps){upSamples.push(mbps);set("spUp",fmt(p90(upSamples)));chart("chUp",upSamples,"#b49ae8")}).catch(function(){stop=true});
       });
     });
-    return chain;
+    return chain.then(function(){
+      flag.on=false;
+      var lp=med(loadedU),lj=jitOf(loadedU);
+      if(lp!=null)set("spPingU",Math.round(lp));if(lj!=null)set("spJitU",lj.toFixed(1));
+    });
   }).then(function(){
+    var down=p90(dlSamples),up=p90(upSamples),ping=med(idleOk),jit=jitOf(idleOk);
+    stars("scStream",down>0?(down>=50?5:down>=25?4:down>=10?3:down>=5?2:1):null);
+    stars("scGame",ping!=null?(ping<50&&(jit||0)<10?5:ping<100&&(jit||0)<20?4:ping<150&&(jit||0)<30?3:ping<250?2:1):null);
+    var both=Math.min(down,up);
+    stars("scCall",both>0?(both>=10&&(jit||0)<20?5:both>=5&&(jit||0)<30?4:both>=2.5?3:both>=1?2:1):null);
     stage.textContent="测速完成";
+    set("spWhen","测于 "+new Date().toLocaleTimeString());
   }).catch(function(){
     stage.textContent="测速失败，可能被当前网络或代理拦截，稍后再试。";
   }).then(function(){
-    btn.disabled=false;btn.textContent="重新测速";
+    btn.disabled=false;btn.textContent="重新测速";pauseBtn.hidden=true;
   });
 });
+
 
 
 /* RDAP */
