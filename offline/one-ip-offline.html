@@ -651,18 +651,35 @@ $("speedBtn").addEventListener("click",function(){
   }
   function downloadPhase(ms){
     return new Promise(function(resolve){
-      var bytes=0,samples=[],ctrl=("AbortController" in window)?new AbortController():null;
+      var bytes=0,samples=[],done=false,fell=false;
       var hist=[[performance.now(),0]];
-      function one(){
-        var opts={cache:"no-store"};if(ctrl)opts.signal=ctrl.signal;
-        fetch(BASE+"/__down?bytes=10000000",opts).then(function(r){
-          if(!r.body||!r.body.getReader())return r.arrayBuffer().then(function(b){bytes+=b.byteLength});
-          var rd=r.body.getReader();
-          function pump(){return rd.read().then(function(x){if(x.done)return 0;bytes+=x.value.byteLength;return pump()})}
-          return pump();
-        }).catch(function(){}).then(function(){if(ctrl&&!ctrl.signal.aborted)one()});
+      var xhrs=[];
+      function xone(){
+        if(done||fell)return;
+        var xhr=new XMLHttpRequest();
+        xhr.open("GET",BASE+"/__down?bytes=10000000&x="+Math.random());
+        xhr.responseType="arraybuffer";
+        var lastLoaded=0;
+        xhr.onprogress=function(e){if(e.loaded>lastLoaded){bytes+=e.loaded-lastLoaded;lastLoaded=e.loaded}};
+        xhr.onload=xhr.onerror=xhr.onabort=function(){if(!done&&!fell)xone()};
+        try{xhr.send()}catch(e){setTimeout(xone,300)}
+        xhrs.push(xhr);
       }
-      for(var i=0;i<4;i++)one();
+      for(var i=0;i<4;i++)xone();
+      /* watchdog: if XHR progress reports nothing in this browser,
+         fall back to timed fetch batches (completion-based) */
+      setTimeout(function(){
+        if(done||bytes>0)return;
+        fell=true;
+        xhrs.forEach(function(x){try{x.abort()}catch(e){}});
+        var sizes=[500000,1000000,2000000,5000000];
+        function worker(step){
+          if(done)return;
+          var size=sizes[Math.min(step,sizes.length-1)];
+          fetch(BASE+"/__down?bytes="+size,{cache:"no-store"}).then(function(r){return r.arrayBuffer()}).then(function(b){bytes+=b.byteLength}).catch(function(){}).then(function(){worker(step+1)});
+        }
+        for(var w=0;w<4;w++)worker(0);
+      },2500);
       chart("chDown",[0,0],"#f6821f",ms/1000);
       var t0=performance.now();
       var iv=setInterval(function(){
@@ -675,10 +692,11 @@ $("speedBtn").addEventListener("click",function(){
         samples.push(rate);
         if(samples.length>2)set("spDown",fmt(p90(samples.slice(1))));
         chart("chDown",samples,"#f6821f",ms/1000);
-        if(now-t0>=ms){clearInterval(iv);if(ctrl)ctrl.abort();resolve(samples)}
+        if(now-t0>=ms){clearInterval(iv);done=true;xhrs.forEach(function(x){try{x.abort()}catch(e){}});resolve(samples)}
       },200);
     });
   }
+
   /* upload: fetch POST batches of growing size (100KB -> 4MB),
      4 parallel; completed bytes sampled every 200 ms like download.
      (XHR upload progress never fires in some WebViews, which left
