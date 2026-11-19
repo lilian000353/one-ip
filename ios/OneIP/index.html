@@ -207,11 +207,18 @@ code{font-family:var(--mono);font-size:.92em;background:var(--card2);border:1px 
     <p class="sub" id="consistency" style="margin-top:12px"></p>
   </section>
 
-  <h2 class="sec" id="tool-speed">网站测速（Cloudflare 边缘）</h2>
+  <h2 class="sec" id="tool-speed">网速测试（Cloudflare）</h2>
   <section class="card">
-    <p class="sub" style="margin-top:0">从 Cloudflare 速度测试端点下载 5 MB 数据测下行速率，并测到 Cloudflare 的往返延迟。结果受当前网络与代理影响。</p>
+    <p class="sub" style="margin-top:0">按 speed.cloudflare.com 的方法测速：延迟取多次小请求的中位数，下载/上传用多连接分阶段递增的数据量测吞吐。结果受当前网络与代理影响。</p>
+    <div style="display:flex;gap:28px;flex-wrap:wrap;margin:14px 0 4px">
+      <div><div class="sub" style="margin:0">下载</div><div style="font-size:32px;font-weight:800;line-height:1.15"><span id="spDown">–</span><span style="font-size:14px;font-weight:600"> Mbps</span></div></div>
+      <div><div class="sub" style="margin:0">上传</div><div style="font-size:32px;font-weight:800;line-height:1.15"><span id="spUp">–</span><span style="font-size:14px;font-weight:600"> Mbps</span></div></div>
+      <div><div class="sub" style="margin:0">延迟</div><div style="font-size:32px;font-weight:800;line-height:1.15"><span id="spPing">–</span><span style="font-size:14px;font-weight:600"> ms</span></div></div>
+      <div><div class="sub" style="margin:0">抖动</div><div style="font-size:32px;font-weight:800;line-height:1.15"><span id="spJit">–</span><span style="font-size:14px;font-weight:600"> ms</span></div></div>
+    </div>
+    <p class="sub" id="spStage" style="margin:8px 0 2px">尚未测速</p>
+    <p class="sub" id="spMeta" style="margin:2px 0 10px"></p>
     <button class="btn" id="speedBtn" type="button">开始测速</button>
-    <span id="speedOut" style="margin-left:12px;font-weight:700"></span>
   </section>
 
   <h2 class="sec" id="tool-whois">WHOIS / RDAP</h2>
@@ -474,19 +481,76 @@ $("rtcBtn").addEventListener("click",function(){
   setTimeout(finish,5000);
 });
 
-/* speed */
+/* speed -- modelled on speed.cloudflare.com: staged multi-connection
+   download/upload against speed.cloudflare.com/__down and /__up,
+   latency = median of small requests, jitter = mean successive diff. */
 $("speedBtn").addEventListener("click",function(){
-  var out=$("speedOut");out.textContent="测速中…";
-  var t0=performance.now();
-  fetch("https://www.cloudflare.com/cdn-cgi/trace").then(function(r){return r.text()}).then(function(){
-    var ping=Math.round(performance.now()-t0);
-    var bytes=5000000;var t1=performance.now();
-    return fetch("https://speed.cloudflare.com/__down?bytes="+bytes,{cache:"no-store"}).then(function(r){return r.arrayBuffer()}).then(function(buf){
-      var sec=(performance.now()-t1)/1000;var mbps=(buf.byteLength*8/sec/1000000).toFixed(1);
-      out.textContent="延迟约 "+ping+" ms · 下行约 "+mbps+" Mbps（"+(buf.byteLength/1048576).toFixed(1)+" MB / "+sec.toFixed(2)+" s）";
+  var btn=$("speedBtn"),stage=$("spStage"),meta=$("spMeta");
+  var BASE="https://speed.cloudflare.com";
+  function fmt(v){return v>=100?String(Math.round(v)):v>=10?v.toFixed(1):v.toFixed(2)}
+  function set(id,v){$(id).textContent=v}
+  btn.disabled=true;btn.textContent="测速中…";
+  set("spDown","–");set("spUp","–");set("spPing","–");set("spJit","–");meta.textContent="";
+  var stopDown=false;
+  function downBatch(bytes,n){
+    var t=performance.now(),ps=[];
+    for(var i=0;i<n;i++)ps.push(fetch(BASE+"/__down?bytes="+bytes,{cache:"no-store"}).then(function(r){return r.arrayBuffer()}));
+    return Promise.all(ps).then(function(bufs){
+      var tot=0;bufs.forEach(function(b){tot+=b.byteLength});
+      return {mbps:tot*8/((performance.now()-t)/1000)/1e6,sec:(performance.now()-t)/1000};
     });
-  }).catch(function(){out.textContent="测速失败，可能被网络或代理拦截，稍后再试。"});
+  }
+  function upBatch(bytes,n){
+    var body=new Uint8Array(bytes);for(var i=0;i<bytes;i+=9973)body[i]=i%251;
+    var t=performance.now(),ps=[];
+    for(var j=0;j<n;j++)ps.push(fetch(BASE+"/__up",{method:"POST",body:body,cache:"no-store"}).then(function(r){return r.text()}));
+    return Promise.all(ps).then(function(){return bytes*n*8/((performance.now()-t)/1000)/1e6});
+  }
+  function latency(){
+    var samples=[],chain=Promise.resolve();
+    function once(){var t=performance.now();return fetch(BASE+"/__down?bytes=0",{cache:"no-store"}).then(function(r){return r.text()}).then(function(){samples.push(performance.now()-t)})}
+    for(var i=0;i<20;i++)chain=chain.then(once);
+    return chain.then(function(){
+      samples.sort(function(a,b){return a-b});
+      var med=samples[Math.floor(samples.length/2)],jit=0;
+      for(var i=1;i<samples.length;i++)jit+=Math.abs(samples[i]-samples[i-1]);
+      return {ping:med,jit:samples.length>1?jit/(samples.length-1):0};
+    });
+  }
+  stage.textContent="正在测延迟…";
+  fetch(BASE+"/meta",{cache:"no-store"}).then(function(r){return r.json()}).then(function(m){
+    if(m&&m.colo)meta.textContent="测速服务器："+m.colo+(m.city?" · "+m.city:"")+(m.country?" · "+m.country:"");
+  }).catch(function(){});
+  latency().then(function(l){
+    set("spPing",Math.round(l.ping));set("spJit",l.jit.toFixed(1));
+    stage.textContent="正在测下载…";
+    var sizes=[100000,500000,1000000,5000000,10000000,25000000],chain=Promise.resolve();
+    sizes.forEach(function(s){
+      chain=chain.then(function(){
+        if(stopDown)return;
+        return downBatch(s,4).then(function(r){set("spDown",fmt(r.mbps));if(r.sec>4)stopDown=true;}).catch(function(){stopDown=true});
+      });
+    });
+    return chain;
+  }).then(function(){
+    stage.textContent="正在测上传…";
+    var sizes=[100000,500000,1000000,5000000],chain=Promise.resolve(),stop=false;
+    sizes.forEach(function(s){
+      chain=chain.then(function(){
+        if(stop)return;
+        return upBatch(s,2).then(function(mbps){set("spUp",fmt(mbps));}).catch(function(){stop=true});
+      });
+    });
+    return chain;
+  }).then(function(){
+    stage.textContent="测速完成";
+  }).catch(function(){
+    stage.textContent="测速失败，可能被当前网络或代理拦截，稍后再试。";
+  }).then(function(){
+    btn.disabled=false;btn.textContent="重新测速";
+  });
 });
+
 
 /* RDAP */
 $("rdapBtn").addEventListener("click",function(){
